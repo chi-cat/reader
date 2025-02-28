@@ -13,7 +13,7 @@ const pNormalizeUrl = import("@esm2cjs/normalize-url");
 // import { AltTextService } from '../services/alt-text';
 import TurndownService from 'turndown';
 // import { Crawled } from '../db/crawled';
-import { cleanAttribute } from '../utils/misc';
+import { cleanAttribute, tryDecodeURIComponent } from '../utils/misc';
 import { randomUUID } from 'crypto';
 
 
@@ -150,6 +150,9 @@ export class CrawlerHost extends RPCHost {
     override async init() {
         console.log('Initializing CrawlerHost');
         await this.dependencyReady();
+
+        // Start periodic cleanup
+        setInterval(() => this.cleanupOldFiles(), this.cacheRetentionMs);
 
         this.emit('ready');
         console.log('CrawlerHost ready');
@@ -620,28 +623,30 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
         try {
             const crawlerOptionsHeaderOnly = CrawlerOptionsHeaderOnly.from(req);
             const crawlerOptionsParamsAllowed = CrawlerOptions.from(req.method === 'POST' ? req.body : req.query, req);
-            const noSlashURL = ctx.req.url.slice(1);
             const crawlerOptions = ctx.req.method === 'GET' ? crawlerOptionsHeaderOnly : crawlerOptionsParamsAllowed;
             console.log('Crawler options:', crawlerOptions);
 
+            // Note req.url in express is actually unparsed `path`, e.g. `/some-path?abc`. Instead of a real url.
+            const targetUrl = await this.getTargetUrl(tryDecodeURIComponent(ctx.req.url), crawlerOptions);
+            if (!targetUrl) {
+                return sendResponse(res, 'Invalid URL', { contentType: 'text/plain', envelope: null, code: 400 });
+            }
+
             // Check if the request is for a screenshot
-            if (noSlashURL.startsWith('instant-screenshots/')) {
-                return this.serveScreenshot(noSlashURL, res);
+            if (targetUrl.toString().startsWith('instant-screenshots/')) {
+                return this.serveScreenshot(targetUrl.toString(), res);
             }
 
             // Handle favicon.ico request
-            if (noSlashURL === 'favicon.ico') {
+            if (targetUrl.toString() === 'favicon.ico') {
                 console.log('Favicon request detected');
                 return sendResponse(res, 'Favicon not available', { contentType: 'text/plain', envelope: null, code: 404 });
             }
 
-            // Extract the actual URL to crawl
-            const urlToCrawl = noSlashURL.startsWith('http') ? noSlashURL : `http://${noSlashURL}`;
-
             // Validate URL
             let parsedUrl: URL;
             try {
-                parsedUrl = new URL(urlToCrawl);
+                parsedUrl = targetUrl;
                 if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
                     throw new Error('Invalid protocol');
                 }
@@ -650,7 +655,7 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
                     throw new Error('Invalid TLD');
                 }
             } catch (error) {
-                console.log('Invalid URL:', urlToCrawl, error);
+                console.log('Invalid URL:', targetUrl, error);
                 return sendResponse(res, 'Invalid URL or TLD', { contentType: 'text/plain', envelope: null, code: 400 });
             }
 
@@ -705,6 +710,51 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
             return sendResponse(res, 'Internal server error', { contentType: 'text/plain', envelope: null, code: 500 });
         }
     }
+
+
+    async getTargetUrl(originPath: string, crawlerOptions: CrawlerOptions) {
+        let url: string;
+
+        const targetUrlFromGet = originPath.slice(1);
+        if (targetUrlFromGet) {
+            url = targetUrlFromGet.trim();
+        } else if (crawlerOptions.url) {
+            url = crawlerOptions.url.trim();
+        } else {
+            return null;
+        }
+
+        let result: URL;
+        const normalizeUrl = (await pNormalizeUrl).default;
+        try {
+            result = new URL(
+                normalizeUrl(
+                    url,
+                    {
+                        stripWWW: false,
+                        removeTrailingSlash: false,
+                        removeSingleSlash: false,
+                        sortQueryParameters: false,
+                    }
+                )
+            );
+        } catch (err) {
+            throw new ParamValidationError({
+                message: `${err}`,
+                path: 'url'
+            });
+        }
+
+        if (!['http:', 'https:', 'file:'].includes(result.protocol)) {
+            throw new ParamValidationError({
+                message: `Invalid protocol ${result.protocol}`,
+                path: 'url'
+            });
+        }
+
+        return result;
+    }
+
 
     private isValidTLD(hostname: string): boolean {
         const parts = hostname.split('.');
@@ -911,6 +961,11 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
             const filePath = path.join(localDir, fileName);
             console.log(`Writing file to: ${filePath}`);
             await fs.promises.writeFile(filePath, content);
+
+            // Set file creation time in metadata
+            const now = Date.now() / 1000; // Convert to seconds
+            await fs.promises.utimes(filePath, now, now);
+
             console.log(`File successfully written to: ${filePath}`);
             return filePath;
         } catch (error) {
@@ -918,4 +973,36 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
             throw error;
         }
     }
+
+    private async cleanupOldFiles() {
+        const now = Date.now();
+        const retentionMs = 1000 * 60 * 60 * 48; // 48 hours
+        const localDir = path.join('/app', 'local-storage', 'instant-screenshots');
+
+        try {
+            if (!fs.existsSync(localDir)) {
+                return;
+            }
+
+            const files = await fs.promises.readdir(localDir);
+
+            for (const file of files) {
+                const filePath = path.join(localDir, file);
+                try {
+                    const stats = await fs.promises.stat(filePath);
+                    const fileAge = now - stats.birthtimeMs;
+
+                    if (fileAge > retentionMs) {
+                        await fs.promises.unlink(filePath);
+                        console.log(`Deleted old file: ${filePath}`);
+                    }
+                } catch (error) {
+                    console.error(`Error processing file ${filePath}:`, error);
+                }
+            }
+        } catch (error) {
+            console.error(`Error during cleanup:`, error);
+        }
+    }
+
 }
