@@ -256,11 +256,12 @@ export class PuppeteerControl extends AsyncService {
                 this.browser.process()?.kill('SIGKILL');
             }
         }
+        //https://stackoverflow.com/questions/51629151/puppeteer-protocol-error-page-navigate-target-closed
         const args = [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--single-process'
+            // '--single-process'
         ];
 
         this.browser = await puppeteer.launch({
