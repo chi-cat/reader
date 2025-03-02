@@ -69,8 +69,8 @@ export class SearXNGSearchHost extends RPCHost {
     async search(
         req: Request, res: Response
     ) {
-        this.logger.info(`Crawl request received for URL: ${req.url}`);
-        console.log('Crawl method called with request:', req.url);
+        this.logger.info(`Search request received for URL: ${req.url}`);
+        console.log('Search method called with request:', req.url);
         const ctx = { req, res };
         console.log(`req.headers: ${JSON.stringify(req.headers)}`);
         try {
@@ -101,6 +101,8 @@ export class SearXNGSearchHost extends RPCHost {
                 if (earlyReturnTimer) {
                     return;
                 }
+                this.logger.info(`Operation[search] timed out ${req.url}`);
+                console.log('Operation[search] timed out:', req.url);
                 earlyReturnTimer = setTimeout(() => {
                     if (!lastScrapped) {
                         return;
