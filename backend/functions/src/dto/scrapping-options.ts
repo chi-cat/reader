@@ -188,6 +188,9 @@ export class CrawlerOptions extends AutoCastable implements AutoCastableMetaClas
     })
     timeout?: number | null;
 
+    @Prop()
+    locale?: string;
+
     static override from<T extends CrawlerOptions>(this: Constructor<T>, input: any, ...args: any[]): T {
         const instance = super.from(input, ...args) as T;
         const req = args[0] as Request | undefined;
@@ -204,6 +207,12 @@ export class CrawlerOptions extends AutoCastable implements AutoCastableMetaClas
             if (customMode) {
                 instance.respondWith = customMode;
             }
+
+            const locale = getHeader('X-Locale');
+            if (locale !== undefined) {
+                instance.locale = locale;
+            }
+
 
             const withGeneratedAlt = getHeader('X-With-Generated-Alt');
             if (withGeneratedAlt !== undefined) {
@@ -282,6 +291,7 @@ export class CrawlerOptions extends AutoCastable implements AutoCastableMetaClas
                     ...parseSetCookieString(setCookieHeaders, { decodeValues: false }) as CookieParam,
                 });
             }
+            instance.setCookies = cookies;
 
             const proxyUrl = getHeader('x-proxy-url');
             instance.proxyUrl ??= proxyUrl;

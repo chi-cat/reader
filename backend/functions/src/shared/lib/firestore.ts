@@ -40,9 +40,9 @@ export class FirestoreRecord {
                 console.log(`Setting document ${id} in collection ${this.collectionName}`);
             }
         }),
-        where: () => ({
-            orderBy: () => ({
-                limit: () => ({})
+        where: (...any) => ({
+            orderBy: (...any) => ({
+                limit: (...any) => ({})
             })
         })
     };

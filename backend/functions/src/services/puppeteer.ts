@@ -79,6 +79,7 @@ export interface ScrappingOptions {
     minIntervalMs?: number;
     overrideUserAgent?: string;
     timeoutMs?: number;
+    locale?: string;
 }
 
 
@@ -510,6 +511,14 @@ document.addEventListener('load', handlePageLoad);
         const page = await this.getNextPage();
         const sn = this.snMap.get(page);
         this.logger.info(`Page ${sn}: Scraping ${url}`, { url });
+
+        if (options?.locale) {
+            // Add headers via request interception to walk around this bug
+            // https://github.com/puppeteer/puppeteer/issues/10235
+            await page.setExtraHTTPHeaders({
+                'Accept-Language': options?.locale
+            });
+        }
 
         if (options?.proxyUrl) {
             this.logger.info(`Page ${sn}: Using proxy:`, options.proxyUrl);

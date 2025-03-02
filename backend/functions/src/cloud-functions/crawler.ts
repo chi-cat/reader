@@ -74,6 +74,8 @@ export interface FormattedPage {
     links?: { [k: string]: string; };
     images?: { [k: string]: string; };
 
+    textRepresentation?: string;
+
     toString: () => string;
 }
 
@@ -348,6 +350,7 @@ export class CrawlerHost extends RPCHost {
             return {
                 ...this.getGeneralSnapshotMixins(snapshot),
                 screenshotUrl: snapshot.screenshotUrl,
+                textRepresentation:  `${snapshot.screenshotUrl}\n`,
                 toString() {
                     return this.screenshotUrl;
                 }
@@ -366,6 +369,7 @@ export class CrawlerHost extends RPCHost {
                 ...this.getGeneralSnapshotMixins(snapshot),
                 html: snapshot.html,
                 pageshotUrl: snapshot.pageshotUrl,
+                textRepresentation: `${snapshot.pageshotUrl}\n`,
                 toString() {
                     return this.pageshotUrl;
                 }
@@ -376,6 +380,7 @@ export class CrawlerHost extends RPCHost {
             return {
                 ...this.getGeneralSnapshotMixins(snapshot),
                 html: snapshot.html,
+                textRepresentation: snapshot.html,
                 toString() {
                     return this.html;
                 }
@@ -389,6 +394,7 @@ export class CrawlerHost extends RPCHost {
             return {
                 ...this.getGeneralSnapshotMixins(snapshot),
                 text: snapshot.text,
+                textRepresentation: snapshot.text,
                 toString() {
                     return this.text;
                 }
@@ -611,6 +617,9 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
             formatted.links = _.invert(this.jsdomControl.inferSnapshot(snapshot).links || {});
         }
 
+        const textRepresentation = formatted.toString();
+        formatted.textRepresentation = textRepresentation;
+
         return formatted as FormattedPage;
     }
 
@@ -630,17 +639,6 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
             const targetUrl = await this.getTargetUrl(tryDecodeURIComponent(ctx.req.url), crawlerOptions);
             if (!targetUrl) {
                 return sendResponse(res, 'Invalid URL', { contentType: 'text/plain', envelope: null, code: 400 });
-            }
-
-            // Check if the request is for a screenshot
-            if (targetUrl.toString().startsWith('instant-screenshots/')) {
-                return this.serveScreenshot(targetUrl.toString(), res);
-            }
-
-            // Handle favicon.ico request
-            if (targetUrl.toString() === 'favicon.ico') {
-                console.log('Favicon request detected');
-                return sendResponse(res, 'Favicon not available', { contentType: 'text/plain', envelope: null, code: 404 });
             }
 
             // Validate URL
@@ -663,7 +661,7 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
             this.puppeteerControl.circuitBreakerHosts.add(ctx.req.hostname.toLowerCase());
             console.log('Added to circuit breaker hosts:', ctx.req.hostname.toLowerCase());
 
-            const crawlOpts = this.configure(crawlerOptions, req, parsedUrl);
+            const crawlOpts = this.configure(crawlerOptions, req);
             console.log('Configured crawl options:', crawlOpts);
 
             let lastScrapped: PageSnapshot | undefined;
@@ -879,7 +877,7 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
         }
     }
 
-    configure(opts: CrawlerOptions, req: Request, urlToCrawl: URL) {
+    configure(opts: CrawlerOptions, req: Request) {
 
         this.threadLocal.set('withGeneratedAlt', opts.withGeneratedAlt);
         this.threadLocal.set('withLinksSummary', opts.withLinksSummary);
@@ -892,13 +890,7 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
             this.threadLocal.set('timeout', opts.timeout * 1000);
         }
 
-        const cookies = req.headers['x-set-cookie'] ?
-            (Array.isArray(req.headers['x-set-cookie']) ? req.headers['x-set-cookie'] : [req.headers['x-set-cookie']])
-                .map(cookie => {
-                    const [name, value] = cookie.split('=');
-                    return { name, value, url: urlToCrawl.toString() };
-                })
-            : [];
+        const cookies = opts.setCookies;
 
         console.log('Cookies:', cookies);
         const crawlOpts: ExtraScrappingOptions = {
@@ -910,6 +902,7 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
             waitForSelector: opts.waitForSelector,
             overrideUserAgent: opts.userAgent,
             timeoutMs: opts.timeout ? opts.timeout * 1000 : undefined,
+            locale: opts.locale,
             withIframe: opts.withIframe,
         };
 
