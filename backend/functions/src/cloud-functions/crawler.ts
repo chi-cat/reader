@@ -713,7 +713,7 @@ ${suffixMixins.length ? `\n${suffixMixins.join('\n\n')}\n` : ''}`;
     async getTargetUrl(originPath: string, crawlerOptions: CrawlerOptions) {
         let url: string;
 
-        const targetUrlFromGet = originPath.slice(1);
+        const targetUrlFromGet = originPath.slice(3);
         if (targetUrlFromGet) {
             url = targetUrlFromGet.trim();
         } else if (crawlerOptions.url) {
