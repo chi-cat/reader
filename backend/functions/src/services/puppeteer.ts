@@ -262,7 +262,7 @@ export class PuppeteerControl extends AsyncService {
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            // '--single-process'
+            '--single-process'
         ];
 
         this.browser = await puppeteer.launch({
